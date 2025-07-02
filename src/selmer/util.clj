@@ -87,32 +87,34 @@
 (defn check-tag-args [args]
   (if (even? (count (filter #{\"} args)))
     args (throw (ex-info (str "malformed tag arguments in " args) {:args args}))))
-
+;; 获取标签的内容，使用LL(1)对tag进行分析
 (defn read-tag-info [rdr]
-  (let [buf      (StringBuilder.)
-        tag-type (if (= *filter-open* (read-char rdr)) :filter :expr)
-        filter? (identical? :filter tag-type )]
-    (loop [ch1 (read-char rdr)
+  (let [buf      (StringBuilder.) ;;构建一个StringBuilder作为Buffer
+        tag-type (if (= *filter-open* (read-char rdr)) :filter :expr) ;;检查是何种类型的标签打开
+        filter? (identical? :filter tag-type )] ;;检查是否是filter
+    (loop [ch1 (read-char rdr) ;;读出前两个字节
            ch2 (read-char rdr)]
-      (when-not (or (nil? ch1)
+      (when-not (or (nil? ch1) ;;第一个字节是空的
                     (and (if filter? (= *filter-close* ch1) (= *tag-second* ch1))
-                         (= *tag-close* ch2)))
-        (.append buf ch1)
+                      ;;是filter情况下，第一个字节是filter关闭，非filter情况下，是tag的第二个字符
+                      ;;第二个字节是tag的关闭符号
+                         (= *tag-close* ch2))) ;;上述情况都是假的
+        (.append buf ch1) ;;那么第一个字符就是普通字符，继续推进
         (recur ch2 (read-char rdr))))
-    (let [content (->> (.toString buf)
-                       (check-tag-args)
+    (let [content (->> (.toString buf) ;;buf变成string
+                       (check-tag-args) ;;检查tag参数
                        (re-seq (if filter?
                                  #"(?:[^\"]|\"[^\"]*\")+"
                                  #"(?:[^\s\"]|\"[^\"]*\")+"))
-                       (remove empty?)
-                       (map (fn [^String s] (.trim s))))
-          tag-info (merge {:tag-type tag-type}
+                       (remove empty?) ;; 删除空项目
+                       (map (fn [^String s] (.trim s))));;去掉每个字串的结尾空格等
+          tag-info (merge {:tag-type tag-type} ;;tag的类型
                           (if (= :filter tag-type)
-                            {:tag-value (first content)}
-                            {:tag-name (keyword (first content))
+                            {:tag-value (first content)} ;;filter模式第一个是 tag的值
+                            {:tag-name (keyword (first content)) ;; 非filter模式第一个是Tag的名字
                              :args     (next content)}))]
           (when *tags*
-            (swap! *tags* conj tag-info))
+            (swap! *tags* conj tag-info)) ;;将tag放入全局的*tags*列表中
           tag-info)))
 
 (defn peek-rdr [^java.io.Reader rdr]

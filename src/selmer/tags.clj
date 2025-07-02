@@ -35,7 +35,7 @@
                 (keyword items) value
                 (name items) value)))
     item filters))
-
+;; for parser处理流程，它最终返回一个函数，用来进行渲染时候的处理
 (defn for-handler [args tag-content render rdr]
   (let [content       (tag-content rdr :for :empty :endfor)
         for-content   (get-in content [:for :content])

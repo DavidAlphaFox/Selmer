@@ -103,14 +103,14 @@
 
 ;; render-template renders at runtime, accepts
 ;; post-parsing vectors of INode elements.
-
+;; 渲染已经解析过的模板
 (defn render-template
   " vector of ^selmer.node.INodes and a context map."
   [template context-map]
-  (let [buf (StringBuilder.)]
+  (let [buf (StringBuilder.)] ;;构建模板
     (doseq [^selmer.node.INode element template]
-      (if-let [value (.render-node element context-map)]
-        (.append buf value)
+      (if-let [value (.render-node element context-map)];;渲染当前节点
+        (.append buf value) ;; 将结果放入缓存中
         (.append buf (*missing-value-formatter* (:tag (meta element)) context-map))))
     (.toString buf)))
 
@@ -160,7 +160,7 @@
 
 (defn expr-tag [{:keys [tag-name args]} rdr]
   (if-let [handler (tag-name @expr-tags)]
-    (handler args tag-content render-template rdr)
+    (handler args tag-content render-template rdr);;需要让对应的taghandler进行进一步的parse
     (throw (ex-info (str "unrecognized tag: " tag-name 
                          " - did you forget to close a tag?") 
                     {}))))
@@ -177,7 +177,7 @@
 
 ;; Generally either a filter tag, if tag, ifequal,
 ;; or for. filter-tags are conflated with vanilla tag
-
+;; 在add-node的时候，要将tag处理了
 (defn parse-tag [{:keys [tag-type] :as tag} rdr]
   (with-meta
     (if (= :filter tag-type)
@@ -202,7 +202,7 @@
     (if (nil? list-maybe)
       []
       [list-maybe])))
-
+;;更新Tag标签信息，包括参数和内容
 (defn update-tags
   "Assocs in the passed tag to the tags map."
   [tag tags content args ^StringBuilder buf]
@@ -227,37 +227,37 @@
 
       :else
       (recur ch2 (read-char rdr)))))
-
+;; tag-content函数，用来parse tag内容的函数
 (defn tag-content
   "Parses the content of a tag.
    Returns a map of tag-name -> args & content, which can then be interpreted by the calling function."
-  [rdr start-tag & end-tags]
-  (let [buf (StringBuilder.)]
-    (loop [ch       (read-char rdr)
+  [rdr start-tag & end-tags];; 参数为字节流，开始标签和结束标签
+  (let [buf (StringBuilder.)];; 构建空buf
+    (loop [ch       (read-char rdr);; 读取首个字符
            tags     {}
            content  []
            cur-tag  start-tag ; for example, if
            end-tags end-tags ; for example, [elif, else, endif]
            cur-args nil]
       (cond
-        (and (nil? ch) (not-empty end-tags))
+        (and (nil? ch) (not-empty end-tags)) ;;已经到结尾了，但是关闭的字符串依然不空
         (throw (ex-info (str "No closing tag found for " start-tag)
                         {:args start-tag}))
 
         ; We're done with this tag so return.
-        (nil? ch)
+        (nil? ch) ;; 完成content的parse工作
         tags
 
         ; Skip any short form comments
-        (open-short-comment? ch rdr)
+        (open-short-comment? ch rdr) ;; 跳过注释
         (do (skip-short-comment-tag rdr)
             (recur (read-char rdr) tags content cur-tag end-tags cur-args))
 
         ; A tag was found inside this tag
-        (open-tag? ch rdr)
+        (open-tag? ch rdr);; 发现打开标签的标记
         (let [{:keys [tag-name args] :as tag} (read-tag-info rdr)]
           ; Determine if the tag belongs to the opening tag on this level
-          (if-let [open-tag (and tag-name (some #{tag-name} end-tags))]
+          (if-let [open-tag (and tag-name (some #{tag-name} end-tags))] ;;检查是否是当前标签的关闭标签
             ; This tag is part of the already open tag, like how else or endif belongs to the if tag.
             ; Since we have reached the end of this cluse we empty the contents of the buffer into the tags list.
             (let [tags     (update-tags cur-tag tags content cur-args buf)
@@ -265,7 +265,7 @@
                   end-tags (if (= open-tag :elif)
                              end-tags
                              ; but non-elif tags can only used once, so remove from the possible options
-                             (next (drop-while #(not= tag-name %) end-tags)))]
+                             (next (drop-while #(not= tag-name %) end-tags)))] ;;带有顺序的标签筛选，只保留目标标签后面的标签
               ; clear the buffer - it's been written inside update-tags
               (.setLength buf 0)
               (recur (when-not (empty? end-tags) (read-char rdr))
@@ -277,51 +277,51 @@
 
             ; The detected tag is not part of the open tag.
             ; Recursively reading the new tag and adding it to content.
-            (let [content (append-node content tag buf rdr)]
+            (let [content (append-node content tag buf rdr)] ;; 内部嵌了标签
               (.setLength buf 0)
               (recur (read-char rdr) tags content cur-tag end-tags cur-args))))
 
         ; Just a normal letter
         :else
         (do
-          (.append buf ch)
+          (.append buf ch) ;;普通字符串，正常添加到buffer中
           (recur (read-char rdr) tags content cur-tag end-tags cur-args))))))
 
 ;; Compile-time parsing of tags. Accumulates a transient vector
 ;; before returning the persistent vector of INodes (TextNode, FunctionNode)
-
+;; 处理到一个Tag，需要将Tag加入到模板中
 (defn add-node [template buf rdr]
   (let [template (if-let [text (not-empty (.toString ^StringBuilder buf))]
-                   (conj! template (TextNode. text))
+                   (conj! template (TextNode. text));; 如果buf中有内中，作为TextNode加入模板中
                    template)]
-    (.setLength ^StringBuilder buf 0)
-    (conj! template (FunctionNode. (parse-tag (read-tag-info rdr) rdr)))))
+    (.setLength ^StringBuilder buf 0) ;;重置Buffer
+    (conj! template (FunctionNode. (parse-tag (read-tag-info rdr) rdr)))));;构建FunctionNode
 
 (defn parse* [input]
-  (with-open [rdr (clojure.java.io/reader input)]
-    (let [buf (StringBuilder.)]
+  (with-open [rdr (clojure.java.io/reader input)] ;;构建java.io.BufferedReader
+    (let [buf (StringBuilder.)] ;; 生成一个StringBuilder
       (loop [template (transient [])
-             ch       (read-char rdr)]
+             ch       (read-char rdr)];;读入单一字符
         (if ch
           (cond
             ;; We hit a tag so we append the buffer content to the template
             ;; and empty the buffer, then we proceed to parse the tag
-            (and (open-tag? ch rdr) (contains? #{*tag-second* *filter-open*} (peek-rdr rdr)))
-            (recur (add-node template buf rdr) (read-char rdr))
+            (and (open-tag? ch rdr) (contains? #{*tag-second* *filter-open*} (peek-rdr rdr))) ;;处理打开tag
+            (recur (add-node template buf rdr) (read-char rdr)) ;; 加入节点，并递归调用
 
             ;; Short comment tags are dropped
-            (open-short-comment? ch rdr)
+            (open-short-comment? ch rdr) ;;注释节点
             (do
-              (skip-short-comment-tag rdr)
-              (recur template (read-char rdr)))
+              (skip-short-comment-tag rdr);; 删除注释
+              (recur template (read-char rdr))) ;;递归调用
 
             ;; Default case, here we append the character and
             ;; read the next char
             :else
             (do
-              (.append buf ch)
-              (recur template (read-char rdr))))
-
+              (.append buf ch) ;;将字符串放入buf中
+              (recur template (read-char rdr)))) ;;继续递归调用
+          ;;整个模板结束了，将buf中的内容转成TextNode，放入模板中
           ;; Add the leftover content of the buffer and return the template
           (->> buf (.toString) (TextNode.) (conj! template) persistent!))))))
 
@@ -329,9 +329,9 @@
 ;; first template render. Vector output from parse* gets memoized by render-file.
 
 (defn parse-input [input & [{:keys [custom-tags custom-filters]}]]
-  (swap! expr-tags merge custom-tags)
-  (swap! filters merge custom-filters)
-  (parse* input))
+  (swap! expr-tags merge custom-tags) ;;设置额外的tags
+  (swap! filters merge custom-filters) ;;设置额外的filters
+  (parse* input)) ;;开始处理整个input
 
 ;; File-aware parse wrapper.
 
