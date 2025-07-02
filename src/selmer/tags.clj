@@ -38,8 +38,8 @@
 ;; for parser处理流程，它最终返回一个函数，用来进行渲染时候的处理
 (defn for-handler [args tag-content render rdr]
   (let [content       (tag-content rdr :for :empty :endfor)
-        for-content   (get-in content [:for :content])
-        empty-content (get-in content [:empty :content])
+        for-content   (get-in content [:for :content]) ;;获取tag的内容
+        empty-content (get-in content [:empty :content]) ;;获取empty部分
         [ids [_ items]] (aggregate-args args)
         ids           (map parse-accessor ids)
         [items & filter-names] (when items (.split ^String items "\\|"))
